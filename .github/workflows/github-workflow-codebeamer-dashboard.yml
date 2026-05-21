@@ -17,7 +17,7 @@ jobs:
     env:
       CB_URL: ${{ secrets.CB_URL }}
       CB_TOKEN: ${{ secrets.CB_TOKEN }}
-      CB_QUERY: ${{ vars.CB_QUERY || 'status != ''Closed''' }}
+      CB_QUERY: ${{ vars.CB_QUERY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,3 +34,7 @@ jobs:
           git add data/results/latest.json data/receipts/latest.json
           git commit -m "refresh Codebeamer dashboard state" || true
           git push
+      - name: Fetch dashboard data
+        run: |
+          export CB_QUERY="${CB_QUERY:-status != 'Closed'}"
+          python codebeamer_mcp_fetcher.py fetch
