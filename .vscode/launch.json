@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch MCP Dashboard",
+      "type": "pwa-msedge",
+      "request": "launch",
+      "url": "http://localhost:5173/cdyp7-platform/",
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "vite-dev"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+@import "./styles/codebeamer-dashboard.css";
+
+body {
+  margin: 0;
+  font-family: Segoe UI, sans-serif;
+  background: #f4f4f4;
+  color: #111;
+}
+
+* {
+  box-sizing: border-box;
+}

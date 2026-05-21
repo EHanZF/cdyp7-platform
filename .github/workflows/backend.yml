@@ -1,0 +1,57 @@
+name: CDYP7 MCP Backend
+
+on:
+  repository_dispatch:
+    types:
+      - mcp.invoke
+
+concurrency:
+  group: cdyp7-mcp-state
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      actions: read
+
+    env:
+      CB_URL: ${{ secrets.CB_URL }}
+      CB_TOKEN: ${{ secrets.CB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Execute MCP tool
+        run: |
+          python scripts/mcp_runner.py '${{ toJson(github.event.client_payload) }}'
+
+      - name: Persist dashboard result
+        run: |
+          mkdir -p data/results
+          mkdir -p data/receipts
+          cp output.json data/results/latest.json
+          cp receipt.json data/receipts/latest.json
+
+      - name: Commit dashboard state
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/
+          git commit -m "update Codebeamer ALM dashboard state" || true
+          git push

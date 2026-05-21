@@ -1,0 +1,12 @@
+name: MCP Conformance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo 'Run MCP conformance here'

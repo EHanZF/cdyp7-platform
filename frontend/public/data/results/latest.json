@@ -1,0 +1,142 @@
+{
+  "generatedAt": "2026-05-21T16:00:00Z",
+  "source": "codebeamer",
+  "authority": "non_authoritative",
+  "receiptBacked": true,
+  "receiptId": "sample-rcpt-001",
+  "totals": {
+    "items": 6,
+    "open": 5,
+    "inProgress": 2,
+    "closed": 1,
+    "highPriority": 3
+  },
+  "byStatus": {
+    "Open": 2,
+    "In Progress": 1,
+    "Blocked": 1,
+    "Review": 1,
+    "Done": 1
+  },
+  "byPriority": {
+    "Critical": 1,
+    "High": 2,
+    "Medium": 2,
+    "Low": 1
+  },
+  "byTracker": {
+    "Requirements": 2,
+    "Test Cases": 1,
+    "Defects": 1,
+    "Tasks": 1,
+    "Test Runs": 1
+  },
+  "items": [
+    {
+      "id": 1001,
+      "name": "Brake response timing requirement verification",
+      "tracker": "System Requirements",
+      "status": "In Progress",
+      "priority": "Critical",
+      "assignedTo": [
+        "A. Patel"
+      ],
+      "storyPoints": 3,
+      "dueDate": "2026-06-12T00:00:00Z",
+      "versions": [],
+      "subjects": [],
+      "children": [],
+      "customFields": {
+        "ASIL": "D"
+      },
+      "remaining": 3
+    },
+    {
+      "id": 1002,
+      "name": "Trace test cases to braking requirements",
+      "tracker": "Test Cases",
+      "status": "Open",
+      "priority": "High",
+      "assignedTo": [
+        "M. Chen"
+      ],
+      "storyPoints": 5,
+      "dueDate": "2026-06-17T00:00:00Z",
+      "versions": [],
+      "subjects": [],
+      "children": [],
+      "customFields": {},
+      "remaining": 5
+    },
+    {
+      "id": 1003,
+      "name": "Resolve CAN timing defect",
+      "tracker": "Defects",
+      "status": "Blocked",
+      "priority": "Blocker",
+      "assignedTo": [
+        "J. Rivera"
+      ],
+      "storyPoints": 2,
+      "dueDate": "2026-05-20T00:00:00Z",
+      "versions": [],
+      "subjects": [],
+      "children": [],
+      "customFields": {},
+      "remaining": 2,
+      "blocked": true
+    },
+    {
+      "id": 1004,
+      "name": "Update delivery acceptance criteria",
+      "tracker": "Requirements",
+      "status": "Review",
+      "priority": "Medium",
+      "assignedTo": [
+        "S. Morgan"
+      ],
+      "storyPoints": 4,
+      "dueDate": "2026-07-02T00:00:00Z",
+      "versions": [],
+      "subjects": [],
+      "children": [],
+      "customFields": {},
+      "remaining": 4
+    },
+    {
+      "id": 1005,
+      "name": "Architecture review action items",
+      "tracker": "Tasks",
+      "status": "Open",
+      "priority": "Low",
+      "assignedTo": [
+        "A. Patel",
+        "S. Morgan"
+      ],
+      "storyPoints": 6,
+      "dueDate": "2026-07-10T00:00:00Z",
+      "versions": [],
+      "subjects": [],
+      "children": [],
+      "customFields": {},
+      "remaining": 6
+    },
+    {
+      "id": 1006,
+      "name": "Software integration test execution",
+      "tracker": "Test Runs",
+      "status": "Done",
+      "priority": "High",
+      "assignedTo": [
+        "M. Chen"
+      ],
+      "storyPoints": 0,
+      "dueDate": "2026-06-01T00:00:00Z",
+      "versions": [],
+      "subjects": [],
+      "children": [],
+      "customFields": {},
+      "remaining": 0
+    }
+  ]
+}

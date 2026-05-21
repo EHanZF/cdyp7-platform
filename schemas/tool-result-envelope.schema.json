@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "properties": {
+    "tool": {
+      "type": "string"
+    }
+  }
+}

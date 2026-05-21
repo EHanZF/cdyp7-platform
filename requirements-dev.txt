@@ -1,0 +1,7 @@
+pytest
+pytest-asyncio
+black
+isort
+flake8
+pylint
+httpx
