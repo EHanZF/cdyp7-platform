@@ -1,12 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  base: "/cdyp7-platform/",
+  base: command === 'build' ? '/cdyp7-platform/' : '/',
+}))
   server: {
-    port: 5173,
-    strictPort: true,
+    port: 5173
+    strictPort: true
     open: true
   }
-});
+

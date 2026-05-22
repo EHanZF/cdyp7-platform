@@ -77,7 +77,8 @@ def build_dashboard(query_string: str) -> dict[str, Any]:
     by_tracker = Counter(item.get("tracker") or "Unknown" for item in items)
 
     open_count = sum(
-        count for status, count in by_status.items() if status.lower() in ["new", "open", "draft"]
+        count for status,
+        count in by_status.items() if status.lower() in ["new", "open", "draft"]
     )
 
     in_progress_count = sum(

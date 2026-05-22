@@ -1,11 +1,9 @@
-name: Deploy CDYP7 Dashboard
+name: Deploy React App to GitHub Pages
 
 on:
   push:
     branches: [main]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,19 +11,68 @@ permissions:
   id-token: write
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ✅ Generate fresh data
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: 24
-      - name: Install and build
-        working-directory: frontend
+          python-version: "3.13"
+
+      - name: Install backend deps
+        run: pip install -r requirements.txt
+
+      - name: Fetch dashboard data
+        run: python codebeamer_mcp_fetcher.py fetch
+
+      # ✅ Copy data into frontend/public
+      - name: Move data into frontend
         run: |
-          npm ci
-          npm run build
-      - uses: actions/upload-pages-artifact@v3
+          mkdir -p frontend/public/data
+          cp data/results/latest.json frontend/public/data/latest.json
+
+      # ✅ Build React app
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm install
+
+      - name: Build Vite app
+        working-directory: frontend
+        run: npm run build
+
+      # ✅ Upload build output
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
-      - uses: actions/deploy-pages@v4
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Deploy
+        uses: actions/deploy-pages@v4
+      
+      - name: Override index
+        run: |
+          cp
+          frontend/public/static/cdyp7-codebeamer-dashboard.html
+          frontend/dist/index.html

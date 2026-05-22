@@ -55,3 +55,9 @@ jobs:
           git add data/
           git commit -m "update Codebeamer ALM dashboard state" || true
           git push
+        
+      - name: Lint backend
+        run: |
+          cd backend
+          npm install
+          npm run lint

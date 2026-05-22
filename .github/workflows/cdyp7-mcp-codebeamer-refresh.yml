@@ -1,0 +1,46 @@
+name: CDYP7 MCP Codebeamer Refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+concurrency:
+  group: cdyp7-mcp-codebeamer-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CB_URL: ${{ secrets.CB_URL }}
+      CB_TOKEN: ${{ secrets.CB_TOKEN }}
+      CB_DELIVERY_FIELDS: "ALM_Delivery"
+      CB_DELIVERY_DATE_FIELDS: "Target Date"
+      CB_QUERY: ${{ vars.CB_QUERY || "status != 'Closed'" }}
+      CDYP7_OUTPUT: data/results/latest.json
+      CDYP7_RECEIPT: data/receipts/latest.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install MCP dependencies
+        run: pip install -r requirements-mcp.txt
+      - name: Build dashboard state through MCP module
+        run: |
+          python - <<'PY'
+          import asyncio, os, sys
+          sys.path.insert(0, ".")
+          from app.mcp.ptc_codebeamer_mcp_server import cdyp7_cb_dashboard
+          asyncio.run(cdyp7_cb_dashboard(os.getenv("CB_QUERY", "status != 'Closed'"), persist=True))
+          PY
+      - name: Commit state
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/results/latest.json data/receipts/latest.json
+          git commit -m "refresh CDYP7 Codebeamer MCP dashboard state" || true
+          git push
