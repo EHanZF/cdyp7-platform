@@ -32,4 +32,19 @@ receipts/
 
 # Logs and results
 data/results/*.json
-data/receipts/*.json
+data/receipts/*.json# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Local runtime data
+data/results/latest.json
+data/receipts/latest.json
+
+# Logs
+*.log
