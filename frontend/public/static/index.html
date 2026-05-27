@@ -65,9 +65,292 @@ function renderBars(el,data,kind){const e=Object.entries(data).sort((a,b)=>b[1]-
 function renderOwners(items){const c={};for(const i of items)(i.owners?.length?i.owners:["Unassigned"]).forEach(o=>c[o]=(c[o]||0)+1);renderBars(els.ownerLoad,c,"owner")}
 function renderTimeline(deliveries,sel){const list=sel==="all"?deliveries:deliveries.filter(d=>d.id===sel);if(!list.length){els.deliveryTimeline.innerHTML='<div class="empty">No delivery data found.</div>';return}els.deliveryTimeline.innerHTML=list.map(d=>{const total=safeNum(d.totalItems,0),rem=safeNum(d.remainingItems,0),done=safeNum(d.completedItems,Math.max(0,total-rem)),pct=total?Math.round(done/total*100):0,du=daysUntil(d.deliveryDate);const cls=du!==null&&du<7&&rem>0?"risk-high":du!==null&&du<21&&rem>0?"risk-med":"risk-low";return`<div class="timeline-item"><div class="date-chip">${fmtDate(d.deliveryDate)}</div><div><strong>${esc(d.name)}</strong><div class="progress-wrap" style="margin-top:8px"><div class="progress-bar" style="width:${pct}%"></div></div><div class="footer-note" style="margin-top:6px">${done}/${total} complete · ${rem} remaining</div></div><strong class="${cls}">${pct}%</strong></div>`}).join("")}
 function renderTable(items){const q=lower(els.searchInput.value),sel=els.deliveryFilter.value;let list=items.filter(i=>sel==="all"||i.deliveryId===sel);if(q)list=list.filter(i=>[i.id,i.title,i.deliveryName,i.status,i.priority,i.owner,i.tracker,i.dueDate].some(v=>lower(v).includes(q)));const sort=els.sortSelect.value;list.sort((a,b)=>sort==="target"?new Date(a.dueDate||a.deliveryDate||"9999-12-31")-new Date(b.dueDate||b.deliveryDate||"9999-12-31"):sort==="owner"?a.owner.localeCompare(b.owner):sort==="priority"?(isHigh(b.priority)?1:0)-(isHigh(a.priority)?1:0):sort==="state"?a.status.localeCompare(b.status):risk(b)-risk(a));if(!list.length){els.itemsTable.innerHTML='<tr><td colspan="10"><div class="empty">No open RV&S items match current filters.</div></td></tr>';return}els.itemsTable.innerHTML=list.map(i=>{const owners=i.owners?.length?i.owners:["Unassigned"];const title=i.url?`<a href="${esc(i.url)}" target="_blank" rel="noreferrer">${esc(i.title)}</a>`:esc(i.title);return`<tr><td>${esc(i.id)}</td><td><strong>${title}</strong></td><td>${esc(i.deliveryName)}</td><td><span class="badge ${isClosed(i.status)?"done":isProgress(i.status)?"progress":"open"}">${esc(i.status)}</span></td><td><span class="badge ${isHigh(i.priority)?"risk":""}">${esc(i.priority)}</span></td><td><div class="owner-list">${owners.map(o=>`<span class="avatar" title="${esc(o)}">${initials(o)}</span>`).join("")}<span>${esc(owners.join(", "))}</span></div></td><td>${esc(i.tracker)}</td><td>${fmtDate(i.dueDate||i.deliveryDate)}</td><td>${safeNum(i.remaining,1)}</td><td>${riskLabel(i)}</td></tr>`}).join("")}
-async function load(){const endpoint=els.endpointInput.value.trim()||cfg.endpoint;localStorage.setItem("cdyp7-rvs-dashboard-endpoint",endpoint);els.refreshBtn.disabled=true;els.refreshBtn.textContent="Refreshing...";try{const res=await fetch(endpoint+(endpoint.includes("?")?"&":"?")+"ts="+Date.now(),{headers:{Accept:"application/json"}});if(!res.ok)throw new Error("HTTP "+res.status);state=normalize(await res.json());els.connectionStatus.textContent="Live RV&S state loaded";els.liveDot.classList.add("live");render()}catch(e){console.error(e);els.connectionStatus.textContent="Data unavailable: "+e.message;els.liveDot.classList.remove("live")}finally{els.refreshBtn.disabled=false;els.refreshBtn.textContent="Refresh"}}
+async function load(){const endpoint=els.endpointInput.value.trim()||cfg.endpoint;localStorage.setItem("cdyp7-rvs-dashboard-endpoint",endpoint);els.refreshBtn.disabled=true;els.refreshBtn.textContent="Refreshing...";try{const res=await fetch(endpoint+(endpoint.includes("?")?"&":"?")+"ts="+Date.now(),{headers:{Accept:"application/json"}});if(res.status===401){ window.location.href="/auth/login"; return; } if(!res.ok)throw new Error("HTTP "+res.status);state=normalize(await res.json());els.connectionStatus.textContent="Live RV&S state loaded";els.liveDot.classList.add("live");render()}catch(e){console.error(e);els.connectionStatus.textContent="Data unavailable: "+e.message;els.liveDot.classList.remove("live")}finally{els.refreshBtn.disabled=false;els.refreshBtn.textContent="Refresh"}}
 function demo(){const today=new Date(),d=n=>new Date(today.getTime()+n*86400000).toISOString();state=normalize({generatedAt:new Date().toISOString(),source:"ptc-rvs-demo",server:"skobde-mks-im.kobde.trw.com:7001",query:"Find Liv Projects All My Work",authority:"non_authoritative",receiptBacked:true,receiptId:"demo-rvs-rcpt",deliveries:[{id:"liv-main-delivery",name:"Liv Main Delivery",deliveryDate:d(21),totalItems:6,completedItems:0,remainingItems:6}],items:[{id:101,title:"Find Liv task requiring attention",deliveryName:"Liv Main Delivery",deliveryDate:d(21),status:"ALM_Started",priority:"High",owners:["z0190004"],tracker:"ALM_Task",remaining:4},{id:102,title:"CR owner action",deliveryName:"Liv Main Delivery",deliveryDate:d(14),status:"ALM_Defined",priority:"Medium",owners:["z0190004"],tracker:"ALM_Change Request",remaining:2},{id:103,title:"Open point missing look across",deliveryName:"Liv Main Delivery",deliveryDate:d(-2),status:"ALM_Checked",priority:"High",owners:["z0190004"],tracker:"ALM_Open Point",remaining:1}]});els.connectionStatus.textContent="Demo RV&S data loaded";els.liveDot.classList.add("live");render()}
 els.refreshBtn.addEventListener("click",load);els.sampleBtn.addEventListener("click",demo);els.deliveryFilter.addEventListener("change",render);els.sortSelect.addEventListener("change",render);els.searchInput.addEventListener("input",render);load();setInterval(load,cfg.refreshMs);
 </script>
+<style>
+  #rvsDetailBackdrop {
+    position: fixed;
+    inset: 0;
+    display: none;
+    z-index: 9999;
+    background: rgba(15, 23, 42, 0.45);
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  #rvsDetailModal {
+    background: white;
+    width: min(1000px, 96vw);
+    max-height: 88vh;
+    overflow: auto;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+    border: 1px solid #e5e7eb;
+  }
+
+  .rvs-detail-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .rvs-detail-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 900;
+  }
+
+  .rvs-detail-subtitle {
+    margin-top: 6px;
+    color: #667085;
+    font-size: 13px;
+  }
+
+  .rvs-detail-close {
+    border: 0;
+    background: #111827;
+    color: white;
+    border-radius: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: 800;
+  }
+
+  .rvs-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .rvs-detail-field {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+
+  .rvs-detail-field strong {
+    display: block;
+    color: #475467;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 5px;
+  }
+
+  .rvs-detail-field pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    color: #111827;
+    font-family: inherit;
+  }
+
+  .rvs-detail-wide {
+    grid-column: 1 / -1;
+  }
+
+  #itemsTable tr {
+    cursor: pointer;
+  }
+
+  #itemsTable tr:hover {
+    background: #eef6ff !important;
+  }
+
+  @media (max-width: 800px) {
+    .rvs-detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div id="rvsDetailBackdrop">
+  <div id="rvsDetailModal" role="dialog" aria-modal="true">
+    <div class="rvs-detail-header">
+      <div>
+        <h2 id="rvsDetailTitle" class="rvs-detail-title">RV&amp;S Item Detail</h2>
+        <div id="rvsDetailSubtitle" class="rvs-detail-subtitle">Loading…</div>
+      </div>
+      <button class="rvs-detail-close" type="button" onclick="closeRvsDetail()">Close</button>
+    </div>
+
+    <div id="rvsDetailBody" class="rvs-detail-grid">
+      <div class="rvs-detail-field rvs-detail-wide">
+        <strong>Status</strong>
+        <pre>Waiting for item data…</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>'"]/g, function (c) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#039;",
+        '"': "&quot;"
+      }[c];
+    });
+  }
+
+  window.closeRvsDetail = function () {
+    document.getElementById("rvsDetailBackdrop").style.display = "none";
+  };
+
+  function openRvsDetail() {
+    document.getElementById("rvsDetailBackdrop").style.display = "flex";
+  }
+
+  function showLoading(itemId) {
+    openRvsDetail();
+    document.getElementById("rvsDetailTitle").textContent = "RV&S Item " + itemId;
+    document.getElementById("rvsDetailSubtitle").textContent = "Fetching latest data from PTC RV&S…";
+    document.getElementById("rvsDetailBody").innerHTML = `
+      <div class="rvs-detail-field rvs-detail-wide">
+        <strong>Loading</strong>
+        <pre>Querying RV&S item ${escapeHtml(itemId)}…</pre>
+      </div>
+    `;
+  }
+
+  function renderDetail(payload) {
+    const fields = payload.fields || {};
+    const item = payload.item || {};
+    const itemId = payload.itemId || item.id || fields.ID || "";
+
+    const summary = item.title || fields.Summary || "";
+    const type = item.tracker || fields.Type || "RV&S Item";
+    const state = item.status || fields.State || "Unknown";
+
+    document.getElementById("rvsDetailTitle").textContent =
+      `${type}: ${itemId}`;
+
+    document.getElementById("rvsDetailSubtitle").textContent =
+      `${summary} · ${state}`;
+
+    const preferredOrder = [
+      "ID",
+      "Summary",
+      "Type",
+      "State",
+      "Priority",
+      "Project",
+      "ALM_Team",
+      "ALM_Owners",
+      "ALM_Analysers",
+      "ALM_Classification",
+      "ALM_Target Date",
+      "ALM_Analysis Target Date",
+      "ALM_Planned Completion Date",
+      "ALM_Remaining Effort",
+      "Created By",
+      "Created Date",
+      "Modified By",
+      "Modified Date",
+      "ALM_Description",
+      "Description"
+    ];
+
+    const html = [];
+
+    for (const key of preferredOrder) {
+      if (fields[key] !== undefined && fields[key] !== "") {
+        const wide = key === "Summary" || key === "Project" || key.includes("Description");
+        html.push(`
+          <div class="rvs-detail-field ${wide ? "rvs-detail-wide" : ""}">
+            <strong>${escapeHtml(key)}</strong>
+            <pre>${escapeHtml(fields[key])}</pre>
+          </div>
+        `);
+      }
+    }
+
+    for (const [key, value] of Object.entries(fields)) {
+      if (!preferredOrder.includes(key) && value !== "") {
+        html.push(`
+          <div class="rvs-detail-field">
+            <strong>${escapeHtml(key)}</strong>
+            <pre>${escapeHtml(value)}</pre>
+          </div>
+        `);
+      }
+    }
+
+    document.getElementById("rvsDetailBody").innerHTML =
+      html.length
+        ? html.join("")
+        : `<div class="rvs-detail-field rvs-detail-wide"><strong>No detail</strong><pre>No fields returned.</pre></div>`;
+  }
+
+  async function fetchRvsItemDetail(itemId) {
+    showLoading(itemId);
+
+    try {
+      const response = await fetch(`/api/rvs/item/${encodeURIComponent(itemId)}`, {
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+      });
+
+      if (response.status === 401) {
+        window.location.href = "/auth/login";
+        return;
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status}: ${text}`);
+      }
+
+      const payload = await response.json();
+      renderDetail(payload);
+    } catch (error) {
+      document.getElementById("rvsDetailSubtitle").textContent = "Unable to load RV&S item detail.";
+      document.getElementById("rvsDetailBody").innerHTML = `
+        <div class="rvs-detail-field rvs-detail-wide">
+          <strong>Error</strong>
+          <pre>${escapeHtml(error.message)}</pre>
+        </div>
+      `;
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    const row = event.target.closest("#itemsTable tr");
+    if (!row) return;
+
+    const firstCell = row.querySelector("td");
+    if (!firstCell) return;
+
+    const itemId = firstCell.textContent.trim();
+
+    if (!/^\d+$/.test(itemId)) {
+      return;
+    }
+
+    fetchRvsItemDetail(itemId);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      closeRvsDetail();
+    }
+  });
+
+  console.log("RV&S item detail click handler registered.");
+})();
+</script>
 </body>
 </html>
+

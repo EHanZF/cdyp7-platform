@@ -38,5 +38,278 @@
     function isClosed(status){return defaultConfig.closedStatuses.includes(lower(status))}function isInProgress(status){return defaultConfig.inProgressStatuses.includes(lower(status))}function isHighPriority(priority){return defaultConfig.highPriorities.includes(lower(priority))}function isAtRisk(item){return item.blocked||isHighPriority(item.priority)||isOverdue(item.dueDate)}function riskScore(item){return(item.blocked?50:0)+(isOverdue(item.dueDate)?30:0)+(isHighPriority(item.priority)?20:0)}function riskLabel(item){if(item.blocked)return`<span class="badge risk">Blocked</span>`;if(isOverdue(item.dueDate))return`<span class="badge risk">Overdue</span>`;if(isHighPriority(item.priority))return`<span class="badge open">High focus</span>`;return`<span class="badge done">On track</span>`}function isOverdue(date){if(!date)return false;const end=new Date(date);end.setHours(23,59,59,999);return end<new Date()}function deliveryRiskClass(date,remaining){if(!date||!remaining)return"risk-low";const days=daysUntil(date);if(days<0||(days<=7&&remaining>0))return"risk-high";if(days<=21&&remaining>0)return"risk-med";return"risk-low"}function timingText(date){const days=daysUntil(date);if(days<0)return`${Math.abs(days)} day(s) past delivery date`;if(days===0)return"Delivery is today";return`${days} day(s) until delivery`}function daysUntil(date){const start=new Date();start.setHours(0,0,0,0);const end=new Date(date);end.setHours(0,0,0,0);return Math.round((end-start)/86400000)}function countBy(items,key){return items.reduce((acc,item)=>{const label=item[key]||"Unknown";acc[label]=(acc[label]||0)+1;return acc},{})}function nameOf(value){if(!value)return"";if(typeof value==="string")return value;if(typeof value==="number")return String(value);return value.name||value.label||value.value||String(value.id||"")}function firstName(values){if(!Array.isArray(values)||!values.length)return"";return nameOf(values[0])}function lower(value){return String(value||"").trim().toLowerCase()}function slug(value){return lower(value).replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"")||"unassigned"}function safeNumber(value,fallback){const n=Number(value);return Number.isFinite(n)?n:fallback}function formatDate(value){return new Date(value).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})}function formatDateTime(value){return new Date(value).toLocaleString()}function cacheBust(url){return url+(url.includes("?")?"&":"?")+"ts="+Date.now()}function statusBadgeClass(status){if(isClosed(status))return"done";if(isInProgress(status))return"progress";if(lower(status).includes("block"))return"risk";return"open"}function priorityBadgeClass(priority){return isHighPriority(priority)?"risk":""}function barColor(label,kind){const v=lower(label);if(kind==="priority"&&isHighPriority(v))return"var(--red)";if(kind==="status"&&isClosed(v))return"var(--green)";if(kind==="status"&&isInProgress(v))return"var(--blue)";if(v.includes("block"))return"var(--red)";if(kind==="owner")return"var(--purple)";return"var(--blue)"}function initials(name){return String(name||"?").split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0].toUpperCase()).join("")||"?"}function escapeHtml(value){return String(value??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#039;",'"':"&quot;"}[c]))}function escapeAttr(value){return escapeHtml(value)}
     els.refreshBtn.addEventListener("click",fetchDashboard);els.sampleBtn.addEventListener("click",loadSampleData);els.deliveryFilter.addEventListener("change",render);els.searchInput.addEventListener("input",render);fetchDashboard();window.setInterval(fetchDashboard,defaultConfig.refreshMs);
   </script>
+  <style>
+  .rvs-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 24px;
+  }
+
+  .rvs-modal {
+    width: min(980px, 96vw);
+    max-height: 88vh;
+    overflow: auto;
+    background: #ffffff;
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+    padding: 22px;
+  }
+
+  .rvs-modal-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .rvs-modal-title {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    margin: 0;
+  }
+
+  .rvs-modal-subtitle {
+    color: #667085;
+    margin-top: 6px;
+    font-size: 13px;
+  }
+
+  .rvs-close-btn {
+    border: 0;
+    background: #111827;
+    color: white;
+    border-radius: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: 800;
+  }
+
+  .rvs-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .rvs-detail-field {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #f8fafc;
+  }
+
+  .rvs-detail-field strong {
+    display: block;
+    color: #475467;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 5px;
+  }
+
+  .rvs-detail-field span,
+  .rvs-detail-field pre {
+    font-size: 13px;
+    color: #111827;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  .rvs-detail-wide {
+    grid-column: 1 / -1;
+  }
+
+  #itemsTable tr {
+    cursor: pointer;
+  }
+
+  #itemsTable tr:hover {
+    background: #eef6ff;
+  }
+
+  @media (max-width: 800px) {
+    .rvs-detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div id="rvsDetailBackdrop" class="rvs-modal-backdrop">
+  <div class="rvs-modal" role="dialog" aria-modal="true" aria-labelledby="rvsDetailTitle">
+    <div class="rvs-modal-header">
+      <div>
+        <h2 id="rvsDetailTitle" class="rvs-modal-title">RV&amp;S Item Detail</h2>
+        <div id="rvsDetailSubtitle" class="rvs-modal-subtitle">Loading item detail…</div>
+      </div>
+      <button class="rvs-close-btn" onclick="closeRvsDetail()">Close</button>
+    </div>
+
+    <div id="rvsDetailBody" class="rvs-detail-grid">
+      <div class="rvs-detail-field rvs-detail-wide">
+        <strong>Status</strong>
+        <span>Waiting for item data…</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function escapeRvsHtml(value) {
+    return String(value ?? "").replace(/[&<>'"]/g, function (c) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#039;",
+        '"': "&quot;"
+      }[c];
+    });
+  }
+
+  function closeRvsDetail() {
+    document.getElementById("rvsDetailBackdrop").style.display = "none";
+  }
+
+  function openRvsDetailModal() {
+    document.getElementById("rvsDetailBackdrop").style.display = "flex";
+  }
+
+  function renderRvsDetail(payload) {
+    const fields = payload.fields || {};
+    const item = payload.item || {};
+
+    const title = item.title || fields.Summary || `RV&S Item ${payload.itemId}`;
+    const type = item.tracker || fields.Type || "RV&S Item";
+    const state = item.status || fields.State || "Unknown";
+
+    document.getElementById("rvsDetailTitle").textContent =
+      `${type}: ${payload.itemId}`;
+
+    document.getElementById("rvsDetailSubtitle").textContent =
+      `${title} · ${state}`;
+
+    const preferredOrder = [
+      "ID",
+      "Summary",
+      "Type",
+      "State",
+      "Priority",
+      "Project",
+      "ALM_Team",
+      "ALM_Owners",
+      "ALM_Analysers",
+      "ALM_Classification",
+      "ALM_Target Date",
+      "ALM_Analysis Target Date",
+      "ALM_Planned Completion Date",
+      "ALM_Remaining Effort",
+      "Created By",
+      "Created Date",
+      "Modified By",
+      "Modified Date",
+      "ALM_Description",
+      "Description"
+    ];
+
+    const rendered = [];
+
+    for (const key of preferredOrder) {
+      if (fields[key] !== undefined && fields[key] !== "") {
+        const isWide = key.includes("Description") || key === "Summary" || key === "Project";
+        rendered.push(`
+          <div class="rvs-detail-field ${isWide ? "rvs-detail-wide" : ""}">
+            <strong>${escapeRvsHtml(key)}</strong>
+            <pre>${escapeRvsHtml(fields[key])}</pre>
+          </div>
+        `);
+      }
+    }
+
+    // Include any fields not in preferredOrder.
+    for (const [key, value] of Object.entries(fields)) {
+      if (!preferredOrder.includes(key) && value !== "") {
+        rendered.push(`
+          <div class="rvs-detail-field">
+            <strong>${escapeRvsHtml(key)}</strong>
+            <pre>${escapeRvsHtml(value)}</pre>
+          </div>
+        `);
+      }
+    }
+
+    document.getElementById("rvsDetailBody").innerHTML =
+      rendered.length
+        ? rendered.join("")
+        : `<div class="rvs-detail-field rvs-detail-wide"><strong>No detail</strong><span>No fields returned.</span></div>`;
+  }
+
+  async function fetchRvsItemDetail(itemId) {
+    openRvsDetailModal();
+
+    document.getElementById("rvsDetailTitle").textContent = `RV&S Item ${itemId}`;
+    document.getElementById("rvsDetailSubtitle").textContent = "Fetching latest PTC RV&S data…";
+    document.getElementById("rvsDetailBody").innerHTML = `
+      <div class="rvs-detail-field rvs-detail-wide">
+        <strong>Loading</strong>
+        <span>Querying RV&S server for item ${escapeRvsHtml(itemId)}…</span>
+      </div>
+    `;
+
+    try {
+      const res = await fetch(`/api/rvs/item/${encodeURIComponent(itemId)}`, {
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+      });
+
+      if (res.status === 401) {
+        window.location.href = "/auth/login";
+        return;
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text}`);
+      }
+
+      const payload = await res.json();
+      renderRvsDetail(payload);
+    } catch (err) {
+      document.getElementById("rvsDetailSubtitle").textContent = "Unable to load RV&S item detail.";
+      document.getElementById("rvsDetailBody").innerHTML = `
+        <div class="rvs-detail-field rvs-detail-wide">
+          <strong>Error</strong>
+          <pre>${escapeRvsHtml(err.message)}</pre>
+        </div>
+      `;
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    const row = event.target.closest("#itemsTable tr");
+    if (!row) return;
+
+    const firstCell = row.querySelector("td");
+    if (!firstCell) return;
+
+    const itemId = firstCell.textContent.trim();
+    if (!/^\d+$/.test(itemId)) return;
+
+    fetchRvsItemDetail(itemId);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      closeRvsDetail();
+    }
+  });
+</script>
 </body>
 </html>
