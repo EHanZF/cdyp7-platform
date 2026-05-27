@@ -62,3 +62,27 @@ __pycache__/
 # Runtime data
 data/results/latest.json
 data/receipts/latest.json
+
+# Python virtual environments
+.venv/
+.venv*/
+venv/
+env/
+
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Packaging/build outputs
+build/
+dist/
+*.egg-info/
+
+# Local environment/config
+.env
+.env.*
