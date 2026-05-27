@@ -236,23 +236,36 @@ async def build_ptc_rvs_context(
     )
 
 
-def derive_alm_delivery(item: dict[str, Any]) -> str | None:
-        """
-        PR1-safe initial value.
+def derive_alm_delivery(item):
+    """Derive the ALM delivery identifier from normalized RV&S/PTC item data.
 
-        Priority:
-        1. Existing explicit alm_delivery field, if present on the primary item.
-        2. Linked ALM number as a temporary fallback/provenance value.
+    Priority:
+    1. Explicit ALM delivery fields
+    2. linked_alm_number
+    3. alm_item_number
+    """
+    if not item:
+        return None
 
-        If PTC_RVS_ENABLE_LINKED_ALM_DELIVERY_LOOKUP=true, a later enrichment step
-        attempts to replace this value with the authoritative ALM_Delivery from the
-        linked item.
-        """
-        explicit_delivery = item.get("alm_delivery")
-        if explicit_delivery:
-            return str(explicit_delivery)
-            return None
+    explicit_delivery = (
+        item.get("alm_delivery")
+        or item.get("ALM_Delivery")
+        or item.get("delivery")
+        or item.get("deliveryName")
+        or item.get("delivery_name")
+    )
+    if explicit_delivery:
+        return str(explicit_delivery)
 
+    linked_alm_number = item.get("linked_alm_number") or item.get("linkedAlmNumber")
+    if linked_alm_number:
+        return str(linked_alm_number)
+
+    alm_item_number = item.get("alm_item_number") or item.get("almItemNumber")
+    if alm_item_number:
+        return str(alm_item_number)
+
+    return None
 
 def normalize_alm_delivery_from_number(linked_number: str) -> str | None:
     """
