@@ -48,3 +48,17 @@ data/receipts/latest.json
 
 # Logs
 *.log
+
+# PyInstaller/generated artifacts
+build/
+dist/
+*.spec
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.venv/
+
+# Runtime data
+data/results/latest.json
+data/receipts/latest.json
