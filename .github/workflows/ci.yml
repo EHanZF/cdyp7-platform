@@ -2,14 +2,18 @@ name: CDYP7 CI
 
 on:
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
   push:
     branches-ignore:
       - main
 
 jobs:
-  build:
+  test:
     runs-on: windows-latest
+
+    env:
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: Checkout repo
@@ -18,20 +22,27 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.12"
 
       - name: Install dependencies
+        shell: pwsh
         run: |
-          pip install fastapi uvicorn pytest
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Syntax check
+        shell: pwsh
         run: |
           python -m py_compile run_gateway.py
           python -m py_compile app/gateway/rvs_http_gateway.py
+          python -m py_compile app/core/ptc_rvs_context.py
 
-      - name: Import test
+      - name: Import check
+        shell: pwsh
         run: |
-          python -c "from app.gateway.rvs_http_gateway import app"
+          python -c "from app.gateway.rvs_http_gateway import app; print('FastAPI app OK:', app)"
 
-      - name: Run tests
-        run: pytest -q
+      - name: Run pytest
+        shell: pwsh
+        run: |
+          pytest -q
