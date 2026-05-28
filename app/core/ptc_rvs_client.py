@@ -5,7 +5,6 @@ from urllib.parse import quote
 
 import httpx
 
-
 PTC_RVS_BASE_URL = os.getenv(
     "PTC_RVS_BASE_URL",
     "https://skobde-mks-im.kobde.trw.com:7001",
@@ -23,9 +22,7 @@ PTC_RVS_QUERY_PARAM = os.getenv("PTC_RVS_QUERY_PARAM", "query")
 PTC_RVS_LIMIT_PARAM = os.getenv("PTC_RVS_LIMIT_PARAM", "limit")
 PTC_RVS_ITEM_NUMBER_PARAM = os.getenv("PTC_RVS_ITEM_NUMBER_PARAM", "itemNumber")
 
-PTC_RVS_MAX_RESPONSE_BYTES = int(
-    os.getenv("PTC_RVS_MAX_RESPONSE_BYTES", "2000000")
-)
+PTC_RVS_MAX_RESPONSE_BYTES = int(os.getenv("PTC_RVS_MAX_RESPONSE_BYTES", "2000000"))
 
 ALLOWED_RVS_HOSTS = {
     "skobde-mks-im.kobde.trw.com",
@@ -36,14 +33,10 @@ def validate_fixed_base_url(base_url: str = PTC_RVS_BASE_URL) -> None:
     parsed = httpx.URL(base_url)
 
     if parsed.host not in ALLOWED_RVS_HOSTS:
-        raise RuntimeError(
-            f"PTC_RVS_BASE_URL host is not allowed: {parsed.host}"
-        )
+        raise RuntimeError(f"PTC_RVS_BASE_URL host is not allowed: {parsed.host}")
 
     if parsed.scheme not in {"http", "https"}:
-        raise RuntimeError(
-            f"PTC_RVS_BASE_URL scheme is not allowed: {parsed.scheme}"
-        )
+        raise RuntimeError(f"PTC_RVS_BASE_URL scheme is not allowed: {parsed.scheme}")
 
 
 class PtcRvsClient:
@@ -213,9 +206,7 @@ class PtcRvsClient:
                     params=params,
                 )
 
-                content_length = int(
-                    response.headers.get("content-length", "0") or "0"
-                )
+                content_length = int(response.headers.get("content-length", "0") or "0")
 
                 if content_length and content_length > PTC_RVS_MAX_RESPONSE_BYTES:
                     raise RuntimeError(

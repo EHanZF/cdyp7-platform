@@ -22,7 +22,6 @@ from app.core.ptc_rvs_context import (
 )
 from app.core.ptc_rvs_store import cleanup_context_store, get_context
 
-
 router = APIRouter(prefix="/api/context/ptc-rvs", tags=["PTC RV&S Context"])
 
 
@@ -54,6 +53,7 @@ PTC_RVS_VERIFY_TLS = os.getenv("PTC_RVS_VERIFY_TLS", "true").lower() == "true"
 # Route Guard
 # =============================================================================
 
+
 async def require_backend_caller(
     x_cdyp7_caller: str | None = Header(default=None),
 ) -> None:
@@ -80,6 +80,7 @@ def get_rvs_client(request: Request) -> PtcRvsClient:
 # Routes
 # =============================================================================
 
+
 @router.post(
     "/bootstrap",
     response_model=PtcRvsContextResponse,
@@ -90,9 +91,8 @@ async def bootstrap_ptc_rvs_context(
     request: Request,
     rvs: PtcRvsClient = Depends(get_rvs_client),
 ):
-    correlation_id = (
-        request.headers.get("X-Correlation-ID")
-        or request.headers.get("X-CDYP7-Correlation-ID")
+    correlation_id = request.headers.get("X-Correlation-ID") or request.headers.get(
+        "X-CDYP7-Correlation-ID"
     )
 
     try:
@@ -168,6 +168,7 @@ async def read_context_resource(context_id: str):
 # =============================================================================
 # Pooled HTTP Client Factory
 # =============================================================================
+
 
 def make_pooled_http_client() -> httpx.AsyncClient:
     """

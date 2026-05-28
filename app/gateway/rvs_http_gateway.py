@@ -1,8 +1,18 @@
+"""HTTP gateway for the CDYP7 PTC RV&S dashboard.
+
+This module exposes a local FastAPI gateway that authenticates to PTC RV&S
+through the Integrity Lifecycle Manager CLI, serves the static dashboard, and
+returns normalized dashboard JSON for the CDYP7 frontend.
+
+Tool and dashboard outputs remain non-authoritative unless separately backed by
+approved CDYP7 receipt authority.
+"""
+
 from __future__ import annotations
 
 import csv
-import json
 import os
+import re
 import secrets
 import subprocess
 import time
@@ -10,13 +20,13 @@ import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Iterable, Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-
 
 APP_NAME = "CDYP7 RV&S Gateway"
 
@@ -33,31 +43,48 @@ STATIC_DIR = Path(os.getenv("CDYP7_STATIC_DIR", "frontend/public/static"))
 
 DEFAULT_QUERY = "Find Liv Projects All My Work"
 
-ALLOWED_QUERIES = [
-    q.strip()
-    for q in os.getenv(
-        "RVS_ALLOWED_QUERIES",
-        "Find Liv Projects All My Work,Find Liv Future Deliveries,Find Liv Tasks Requiring Attention,Find Liv Builds Requiring Attention,Find Liv Items Requiring Attention",
-    ).split(",")
-    if q.strip()
+DEFAULT_ALLOWED_QUERIES = [
+    "Find Liv Projects All My Work",
+    "Find Liv Future Deliveries",
+    "Find Liv Tasks Requiring Attention",
+    "Find Liv Builds Requiring Attention",
+    "Find Liv Items Requiring Attention",
 ]
 
-FIELDS = [
-    f.strip()
-    for f in os.getenv(
-        "RVS_FIELDS",
-        "ID,Summary,State,ALM_Owners,Type,Priority,ALM_Delivery,ALM_Target Date,ALM_Remaining Effort,ALM_Planned Completion Date,Project",
-    ).split(",")
-    if f.strip()
+DEFAULT_FIELDS = [
+    "ID",
+    "Summary",
+    "State",
+    "ALM_Owners",
+    "Type",
+    "Priority",
+    "ALM_Delivery",
+    "ALM_Target Date",
+    "ALM_Remaining Effort",
+    "ALM_Planned Completion Date",
+    "Project",
 ]
 
-DETAIL_FIELDS = [
-    f.strip()
-    for f in os.getenv(
-        "RVS_DETAIL_FIELDS",
-        "ID,Summary,State,Type,Priority,Project,ALM_Team,ALM_Owners,ALM_Analysers,ALM_Classification,ALM_Target Date,ALM_Analysis Target Date,ALM_Planned Completion Date,ALM_Remaining Effort,Created By,Created Date,Modified By,Modified Date,ALM_Description",
-    ).split(",")
-    if f.strip()
+DEFAULT_DETAIL_FIELDS = [
+    "ID",
+    "Summary",
+    "State",
+    "Type",
+    "Priority",
+    "Project",
+    "ALM_Team",
+    "ALM_Owners",
+    "ALM_Analysers",
+    "ALM_Classification",
+    "ALM_Target Date",
+    "ALM_Analysis Target Date",
+    "ALM_Planned Completion Date",
+    "ALM_Remaining Effort",
+    "Created By",
+    "Created Date",
+    "Modified By",
+    "Modified Date",
+    "ALM_Description",
 ]
 
 DELIVERY_FIELD = os.getenv("RVS_DELIVERY_FIELD", "ALM_Delivery")
@@ -83,70 +110,146 @@ CLOSED_STATES = {
 
 HIGH_PRIORITIES = {"high", "critical", "blocker", "urgent", "mandatory"}
 
-SESSIONS: Dict[str, Dict[str, Any]] = {}
-DASHBOARD_CACHE: Dict[str, Dict[str, Any]] = {}
+SESSIONS: dict[str, dict[str, Any]] = {}
+DASHBOARD_CACHE: dict[str, dict[str, Any]] = {}
+
+CookieSameSite = Literal["lax", "strict", "none"]
+
+
+def csv_env(name: str, default: list[str]) -> list[str]:
+    """Read a comma-separated environment variable as a list."""
+    value = os.getenv(name)
+
+    if not value:
+        return default
+
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def bool_env(name: str, default: bool = False) -> bool:
+    """Read a boolean environment variable."""
+    value = os.getenv(name)
+
+    if value is None:
+        return default
+
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def parse_samesite(value: str | None) -> CookieSameSite | None:
+    """Validate SameSite cookie configuration."""
+    if value is None:
+        return None
+
+    normalized = value.lower()
+
+    if normalized not in {"lax", "strict", "none"}:
+        raise ValueError(f"Invalid SameSite value: {value}")
+
+    return normalized  # type: ignore[return-value]
+
+
+ALLOWED_QUERIES = csv_env(
+    "RVS_ALLOWED_QUERIES",
+    DEFAULT_ALLOWED_QUERIES,
+)
+
+FIELDS = csv_env(
+    "RVS_FIELDS",
+    DEFAULT_FIELDS,
+)
+
+DETAIL_FIELDS = csv_env(
+    "RVS_DETAIL_FIELDS",
+    DEFAULT_DETAIL_FIELDS,
+)
+
+COOKIE_SAMESITE = parse_samesite(os.getenv("CDYP7_COOKIE_SAMESITE", "lax"))
+
+COOKIE_SECURE = bool_env(
+    "CDYP7_COOKIE_SECURE",
+    default=False,
+)
 
 
 def utc_now() -> str:
+    """Return the current UTC timestamp."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def lower(value: Any) -> str:
+    """Normalize a value to lowercase text."""
     return str(value or "").strip().lower()
 
 
 def is_closed(state: str) -> bool:
+    """Return True if an RV&S state is considered closed."""
     return lower(state) in CLOSED_STATES
 
 
 def is_high(priority: str) -> bool:
+    """Return True if a priority is considered high risk."""
     return lower(priority) in HIGH_PRIORITIES
 
 
 def number(value: Any, fallback: float = 1) -> float:
+    """Parse a numeric value with fallback."""
     try:
         if value in (None, ""):
             return fallback
         return float(value)
-    except Exception:
+    except (ValueError, KeyError, TypeError, OSError):
         return fallback
 
 
 def slug(value: str) -> str:
-    import re
+    """Normalize text into a stable slug."""
+    return (
+        re.sub(
+            r"[^a-zA-Z0-9]+",
+            "-",
+            str(value or "").strip().lower(),
+        ).strip("-")
+        or "unassigned"
+    )
 
-    return re.sub(r"[^a-zA-Z0-9]+", "-", str(value or "").strip().lower()).strip("-") or "unassigned"
 
-
-def split_owners(value: str) -> List[str]:
+def split_owners(value: str) -> list[str]:
+    """Split an RV&S owner field into a list of owners."""
     if not value:
         return ["Unassigned"]
 
-    for sep in [",", ";"]:
-        if sep in value:
-            parts = [p.strip() for p in value.split(sep) if p.strip()]
+    for separator in [",", ";"]:
+        if separator in value:
+            parts = [part.strip() for part in value.split(separator) if part.strip()]
             return parts or ["Unassigned"]
 
     return [value.strip()] if value.strip() else ["Unassigned"]
 
 
-def redact_args(args: Iterable[str]) -> List[str]:
-    safe = []
+def redact_args(args: Iterable[str]) -> list[str]:
+    """Redact secret-bearing CLI arguments."""
+    safe_args = []
+
     for arg in args:
-        arg = str(arg)
-        if arg.startswith("--password="):
-            safe.append("--password=***REDACTED***")
+        text = str(arg)
+
+        if text.startswith("--password="):
+            safe_args.append("--password=***REDACTED***")
         else:
-            safe.append(arg)
-    return safe
+            safe_args.append(text)
+
+    return safe_args
 
 
 def validate_im() -> None:
+    """Validate that the RV&S CLI executable is available."""
     if RVS_IM_EXE != "im" and not Path(RVS_IM_EXE).exists():
         raise RuntimeError(f"RVS_IM_EXE not found: {RVS_IM_EXE}")
 
 
-def run_im_connect(username: str, password: str) -> Dict[str, Any]:
+def run_im_connect(username: str, password: str) -> dict[str, Any]:
+    """Check whether the supplied RV&S credentials can connect."""
     validate_im()
 
     args = [
@@ -165,6 +268,7 @@ def run_im_connect(username: str, password: str) -> Dict[str, Any]:
         text=True,
         timeout=RVS_TIMEOUT,
         shell=False,
+        check=False,
     )
 
     return {
@@ -177,8 +281,12 @@ def run_im_connect(username: str, password: str) -> Dict[str, Any]:
 
 
 def run_im_issues(username: str, password: str, query: str) -> str:
+    """Run the RV&S issues query and return raw tabular output."""
     if query not in ALLOWED_QUERIES:
-        raise HTTPException(status_code=400, detail=f"Query is not allowlisted: {query}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Query is not allowlisted: {query}",
+        )
 
     args = [
         RVS_IM_EXE,
@@ -200,6 +308,7 @@ def run_im_issues(username: str, password: str, query: str) -> str:
         text=True,
         timeout=RVS_TIMEOUT,
         shell=False,
+        check=False,
     )
 
     if completed.returncode != 0:
@@ -214,12 +323,20 @@ def run_im_issues(username: str, password: str, query: str) -> str:
     return completed.stdout
 
 
-def run_im_item_details(username: str, password: str, item_id: str) -> Dict[str, Any]:
+def run_im_item_details(
+    username: str,
+    password: str,
+    item_id: str,
+) -> dict[str, Any]:
+    """Fetch detail fields for a single RV&S item."""
     if not str(item_id).isdigit():
-        raise HTTPException(status_code=400, detail="Invalid RV&S item id")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid RV&S item id",
+        )
 
     fields_to_try = list(DETAIL_FIELDS)
-    completed = None
+    completed: subprocess.CompletedProcess[str] | None = None
 
     for _ in range(10):
         args = [
@@ -242,13 +359,20 @@ def run_im_item_details(username: str, password: str, item_id: str) -> Dict[str,
             text=True,
             timeout=RVS_TIMEOUT,
             shell=False,
+            check=False,
         )
 
         if completed.returncode == 0:
-            rows = parse_tabular_im_output(completed.stdout, fields_to_try)
+            rows = parse_tabular_im_output(
+                completed.stdout,
+                fields_to_try,
+            )
 
             if not rows:
-                raise HTTPException(status_code=404, detail=f"RV&S item {item_id} not found")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"RV&S item {item_id} not found",
+                )
 
             row = rows[0]
 
@@ -262,12 +386,11 @@ def run_im_item_details(username: str, password: str, item_id: str) -> Dict[str,
                 "fieldsUsed": fields_to_try,
             }
 
-        # RV&S usually reports invalid fields like:
-        # Field "Description" does not exist.
-        import re
-
         error_text = f"{completed.stdout}\n{completed.stderr}"
-        match = re.search(r'Field\s+"([^"]+)"\s+does not exist', error_text)
+        match = re.search(
+            r'Field\s+"([^"]+)"\s+does not exist',
+            error_text,
+        )
 
         if match:
             bad_field = match.group(1)
@@ -286,66 +409,25 @@ def run_im_item_details(username: str, password: str, item_id: str) -> Dict[str,
         f"stderr: {completed.stderr if completed else ''}"
     )
 
-    args = [
-        RVS_IM_EXE,
-        "issues",
-        f"--hostname={RVS_HOST}",
-        f"--port={RVS_PORT}",
-        "--batch",
-        "--noapplyDisplayPattern",
-        f"--user={username}",
-        f"--password={password}",
-        f"--fields={','.join(DETAIL_FIELDS)}",
-        "--fieldsDelim=\t",
-        f'--queryDefinition=(field["ID"] = {item_id})',
-    ]
 
-    completed = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        timeout=RVS_TIMEOUT,
-        shell=False,
-    )
-
-    if completed.returncode != 0:
-        raise RuntimeError(
-            "RV&S item detail query failed\n"
-            f"command: {' '.join(redact_args(args))}\n"
-            f"exit: {completed.returncode}\n"
-            f"stdout: {completed.stdout}\n"
-            f"stderr: {completed.stderr}"
-        )
-
-    rows = parse_tabular_im_output(completed.stdout, DETAIL_FIELDS)
-
-    if not rows:
-        raise HTTPException(status_code=404, detail=f"RV&S item {item_id} not found")
-
-    row = rows[0]
-
-    return {
-        "source": "ptc-rvs",
-        "server": f"{RVS_HOST}:{RVS_PORT}",
-        "generatedAt": utc_now(),
-        "itemId": item_id,
-        "item": normalize_rvs_item(row),
-        "fields": row,
-    }
-
-
-def parse_tabular_im_output(text: str, fields: List[str]) -> List[Dict[str, str]]:
+def parse_tabular_im_output(
+    text: str,
+    fields: list[str],
+) -> list[dict[str, str]]:
+    """Parse tab-delimited RV&S output."""
     lines = [line.rstrip("\r\n") for line in text.splitlines() if line.strip()]
+
     if not lines:
         return []
 
     rows = list(csv.reader(lines, delimiter="\t"))
+
     if not rows:
         return []
 
-    first = [c.strip() for c in rows[0]]
-    expected_lower = {f.lower() for f in fields}
-    first_lower = {c.lower() for c in first}
+    first = [column.strip() for column in rows[0]]
+    expected_lower = {field.lower() for field in fields}
+    first_lower = {column.lower() for column in first}
 
     if len(first_lower & expected_lower) >= 2:
         headers = first
@@ -355,18 +437,21 @@ def parse_tabular_im_output(text: str, fields: List[str]) -> List[Dict[str, str]
         data_rows = rows
 
     parsed = []
+
     for row in data_rows:
         item = {
-            header: row[idx].strip() if idx < len(row) else ""
-            for idx, header in enumerate(headers)
+            header: row[index].strip() if index < len(row) else ""
+            for index, header in enumerate(headers)
         }
+
         if any(item.values()):
             parsed.append(item)
 
     return parsed
 
 
-def normalize_rvs_item(row: Dict[str, str]) -> Dict[str, Any]:
+def normalize_rvs_item(row: dict[str, str]) -> dict[str, Any]:
+    """Normalize an RV&S row into dashboard item shape."""
     item_id = row.get("ID") or row.get("Id") or row.get("Issue ID") or ""
     summary = row.get("Summary") or f"Item {item_id}"
     state = row.get("State") or "Unknown"
@@ -399,8 +484,9 @@ def normalize_rvs_item(row: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
-def build_deliveries(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    grouped: Dict[str, Dict[str, Any]] = {}
+def build_deliveries(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build delivery summary rows from dashboard items."""
+    grouped: dict[str, dict[str, Any]] = {}
 
     for item in items:
         key = item.get("deliveryId") or "unassigned"
@@ -427,29 +513,32 @@ def build_deliveries(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not delivery.get("deliveryDate") and item.get("deliveryDate"):
             delivery["deliveryDate"] = item.get("deliveryDate")
 
-    return sorted(grouped.values(), key=lambda d: d.get("deliveryDate") or "9999-12-31")
+    return sorted(
+        grouped.values(),
+        key=lambda delivery: delivery.get("deliveryDate") or "9999-12-31",
+    )
 
 
 def cleanup_sessions() -> None:
+    """Remove expired in-memory sessions."""
     now = time.time()
-    expired = [
-        sid
-        for sid, session in SESSIONS.items()
-        if session["expires_at"] < now
-    ]
+    expired = [sid for sid, session in SESSIONS.items() if session["expires_at"] < now]
 
     for sid in expired:
         SESSIONS.pop(sid, None)
 
 
-def get_session(request: Request) -> Optional[Dict[str, Any]]:
+def get_session(request: Request) -> dict[str, Any] | None:
+    """Return the current authenticated session, if present."""
     cleanup_sessions()
 
     sid = request.cookies.get(SESSION_COOKIE)
+
     if not sid:
         return None
 
     session = SESSIONS.get(sid)
+
     if not session:
         return None
 
@@ -460,19 +549,29 @@ def get_session(request: Request) -> Optional[Dict[str, Any]]:
     return session
 
 
-def require_session(request: Request) -> Dict[str, Any]:
+def require_session(request: Request) -> dict[str, Any]:
+    """Return the current session or raise an authentication error."""
     session = get_session(request)
 
     if not session:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+        )
 
     return session
 
 
-def build_dashboard(username: str, password: str, query: str) -> Dict[str, Any]:
+def build_dashboard(
+    username: str,
+    password: str,
+    query: str,
+) -> dict[str, Any]:
+    """Build dashboard data for the requested RV&S query."""
     cache_key = f"{username}:{query}"
 
     cached = DASHBOARD_CACHE.get(cache_key)
+
     if cached and time.time() - cached["ts"] < CACHE_TTL_SECONDS:
         return cached["dashboard"]
 
@@ -489,17 +588,24 @@ def build_dashboard(username: str, password: str, query: str) -> Dict[str, Any]:
     by_priority = Counter(item["priority"] for item in items)
     by_tracker = Counter(item["tracker"] for item in items)
 
-    by_owner: Dict[str, int] = defaultdict(int)
+    by_owner: dict[str, int] = defaultdict(int)
+
     for item in items:
         for owner in item.get("owners") or ["Unassigned"]:
             by_owner[owner] += 1
+
+    receipt_id = (
+        f"gateway_rvs_rcpt_"
+        f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_"
+        f"{uuid.uuid4().hex[:8]}"
+    )
 
     dashboard = {
         "generatedAt": utc_now(),
         "source": "ptc-rvs",
         "authority": "non_authoritative",
         "receiptBacked": True,
-        "receiptId": f"gateway_rvs_rcpt_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}",
+        "receiptId": receipt_id,
         "query": query,
         "server": f"{RVS_HOST}:{RVS_PORT}",
         "user": username,
@@ -510,16 +616,20 @@ def build_dashboard(username: str, password: str, query: str) -> Dict[str, Any]:
             "openItems": len(open_items),
             "remaining": sum(number(item.get("remaining"), 1) for item in open_items),
             "atRisk": sum(
-                1
-                for item in open_items
-                if item.get("blocked") or is_high(item.get("priority", ""))
+                1 for item in open_items if item.get("blocked") or is_high(item.get("priority", ""))
             ),
         },
         "breakdowns": {
             "status": dict(by_status),
             "priority": dict(by_priority),
             "tracker": dict(by_tracker),
-            "owner": dict(sorted(by_owner.items(), key=lambda kv: kv[1], reverse=True)),
+            "owner": dict(
+                sorted(
+                    by_owner.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+            ),
         },
         "items": items,
     }
@@ -548,21 +658,28 @@ app.add_middleware(
 )
 
 if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(STATIC_DIR)),
+        name="static",
+    )
 
 
 @app.get("/")
 def index(request: Request) -> Response:
+    """Serve the dashboard or redirect unauthenticated users."""
     session = get_session(request)
 
     if not session:
         return RedirectResponse("/auth/login", status_code=303)
 
     preferred = STATIC_DIR / "cdyp7-rvs-integrity-dashboard.html"
+
     if preferred.exists():
         return FileResponse(str(preferred))
 
     fallback = STATIC_DIR / "index.html"
+
     if fallback.exists():
         return FileResponse(str(fallback))
 
@@ -575,7 +692,8 @@ def index(request: Request) -> Response:
 
 
 @app.get("/health")
-def health() -> Dict[str, Any]:
+def health() -> dict[str, Any]:
+    """Return gateway health and static configuration."""
     return {
         "ok": True,
         "service": APP_NAME,
@@ -589,8 +707,8 @@ def health() -> Dict[str, Any]:
 
 @app.get("/auth/login")
 def login_page() -> HTMLResponse:
-    return HTMLResponse(
-        """
+    """Render the RV&S login page."""
+    return HTMLResponse("""
 <!doctype html>
 <html>
 <head>
@@ -658,18 +776,19 @@ def login_page() -> HTMLResponse:
     <input name="username" autocomplete="username" required>
 
     <label>Password</label>
-    <input name="password" type="password" autocomplete="current-password" required>
+    <input name="password" type="password" autocomplete="current-password"
+      required>
 
     <button type="submit">Login</button>
   </form>
 </body>
 </html>
-        """
-    )
+        """)
 
 
 @app.post("/auth/login")
 async def login(request: Request) -> Response:
+    """Authenticate to RV&S and create a short-lived gateway session."""
     content_type = request.headers.get("content-type", "")
 
     if "application/json" in content_type:
@@ -682,7 +801,10 @@ async def login(request: Request) -> Response:
         password = str(form.get("password", ""))
 
     if not username or not password:
-        raise HTTPException(status_code=400, detail="username and password are required")
+        raise HTTPException(
+            status_code=400,
+            detail="username and password are required",
+        )
 
     result = run_im_connect(username, password)
 
@@ -711,15 +833,16 @@ async def login(request: Request) -> Response:
         sid,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
-        secure=os.getenv("CDYP7_COOKIE_SECURE", "false").lower() not in {"0", "false", "no"},
-        samesite=os.getenv("CDYP7_COOKIE_SAMESITE", "lax"),
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
     )
 
     return response
 
 
 @app.get("/auth/me")
-def me(request: Request) -> Dict[str, Any]:
+def me(request: Request) -> dict[str, Any]:
+    """Return the current authenticated user."""
     session = require_session(request)
 
     return {
@@ -734,6 +857,7 @@ def me(request: Request) -> Dict[str, Any]:
 
 @app.post("/auth/logout")
 def logout(request: Request) -> Response:
+    """Destroy the current gateway session."""
     sid = request.cookies.get(SESSION_COOKIE)
 
     if sid:
@@ -749,7 +873,8 @@ def logout(request: Request) -> Response:
 def rvs_dashboard(
     request: Request,
     query: str = DEFAULT_QUERY,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
+    """Return the current RV&S dashboard payload."""
     session = require_session(request)
 
     try:
@@ -763,7 +888,11 @@ def rvs_dashboard(
 
 
 @app.get("/api/rvs/item/{item_id}")
-def rvs_item_detail(request: Request, item_id: str) -> Dict[str, Any]:
+def rvs_item_detail(
+    request: Request,
+    item_id: str,
+) -> dict[str, Any]:
+    """Return details for one RV&S item."""
     session = require_session(request)
 
     try:

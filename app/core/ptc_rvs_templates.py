@@ -32,7 +32,6 @@ RVS_FIELD_MAP: dict[str, str] = {
     "alm_delivery_lookup_error_type": "ALM_Delivery_Lookup_Error_Type",
     "alm_delivery_lookup_redaction_applied": "ALM_Delivery_Lookup_Redaction_Applied",
     "linked_alm_number": "Linked_ALM_Number",
-
 }
 
 PROJECT_FIELD_MAP: dict[str, str] = {

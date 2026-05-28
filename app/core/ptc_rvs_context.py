@@ -20,7 +20,6 @@ from app.core.ptc_rvs_templates import (
     resolve_query,
 )
 
-
 BOUNDARY_CONTRACT = {
     "authority_effect": "none",
     "persistence_effect": "none_by_default",
@@ -35,12 +34,10 @@ MAX_ITEMS_DEFAULT = int(os.getenv("PTC_RVS_MAX_ITEMS", "250"))
 MAX_PROJECTS_DEFAULT = int(os.getenv("PTC_RVS_MAX_PROJECTS", "50"))
 FOCUS_LIMIT = int(os.getenv("PTC_RVS_FOCUS_LIMIT", "25"))
 ENABLE_LINKED_ALM_DELIVERY_LOOKUP = (
-    os.getenv("PTC_RVS_ENABLE_LINKED_ALM_DELIVERY_LOOKUP", "false").lower()
-    == "true"
+    os.getenv("PTC_RVS_ENABLE_LINKED_ALM_DELIVERY_LOOKUP", "false").lower() == "true"
 )
-LINKED_LOOKUP_CONCURRENCY = int(
-    os.getenv("PTC_RVS_LINKED_LOOKUP_CONCURRENCY", "8")
-)
+LINKED_LOOKUP_CONCURRENCY = int(os.getenv("PTC_RVS_LINKED_LOOKUP_CONCURRENCY", "8"))
+
 
 class PtcRvsContextRequest(BaseModel):
     query_name: str = Field(min_length=1, max_length=128)
@@ -166,11 +163,7 @@ async def build_ptc_rvs_context(
             "unlinked_requirement_count": len(focus["unlinked_requirements"]),
             "tests_missing_results_count": len(focus["tests_missing_results"]),
             "alm_delivery_count": len(
-                {
-                    item.get("alm_delivery")
-                    for item in items
-                    if item.get("alm_delivery")
-                }
+                {item.get("alm_delivery") for item in items if item.get("alm_delivery")}
             ),
         },
         "projects": projects,
@@ -267,6 +260,7 @@ def derive_alm_delivery(item):
 
     return None
 
+
 def normalize_alm_delivery_from_number(linked_number: str) -> str | None:
     """
     Convert a linked ALM item number into an ALM_Delivery value.
@@ -286,6 +280,7 @@ def normalize_alm_delivery_from_number(linked_number: str) -> str | None:
         return None
 
     return value
+
 
 async def enrich_items_with_linked_alm_delivery(
     items: list[dict[str, Any]],
@@ -348,7 +343,7 @@ async def enrich_items_with_linked_alm_delivery(
 
             return item
 
-        except Exception as exc:
+        except (ValueError, KeyError, TypeError, OSError, RuntimeError) as exc:
             # Do not fail the whole bootstrap if one linked lookup fails.
             item["alm_delivery_lookup_status"] = "lookup_failed"
             item["alm_delivery_lookup_error_type"] = type(exc).__name__
@@ -365,9 +360,7 @@ async def enrich_items_with_linked_alm_delivery(
 
             return item
 
-    enriched = await asyncio.gather(
-        *(enrich_one(item) for item in items)
-    )
+    enriched = await asyncio.gather(*(enrich_one(item) for item in items))
 
     return list(enriched)
 
@@ -391,6 +384,7 @@ def get_linked_alm_number(item: dict[str, Any]) -> str | None:
 
     return value
 
+
 def build_traceability_focus(
     items: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
@@ -409,15 +403,11 @@ def build_traceability_focus(
         }
 
     high_priority = [
-        compact(item)
-        for item in items
-        if str(item.get("priority", "")).lower() == "high"
+        compact(item) for item in items if str(item.get("priority", "")).lower() == "high"
     ][:FOCUS_LIMIT]
 
     unlinked_requirements = [
-        compact(item)
-        for item in items
-        if str(item.get("trace_status", "")).lower() == "unlinked"
+        compact(item) for item in items if str(item.get("trace_status", "")).lower() == "unlinked"
     ][:FOCUS_LIMIT]
 
     tests_missing_results = [
@@ -427,11 +417,9 @@ def build_traceability_focus(
         in {"missingresult", "missing_result", "missing result"}
     ][:FOCUS_LIMIT]
 
-    items_with_alm_delivery = [
-        compact(item)
-        for item in items
-        if item.get("alm_delivery")
-    ][:FOCUS_LIMIT]
+    items_with_alm_delivery = [compact(item) for item in items if item.get("alm_delivery")][
+        :FOCUS_LIMIT
+    ]
 
     return {
         "high_priority_open_items": high_priority,
